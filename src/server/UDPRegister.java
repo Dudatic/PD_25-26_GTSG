@@ -15,16 +15,25 @@ public class UDPRegister implements Runnable {
     @Override
     public void run() {
         try (DatagramSocket socket = new DatagramSocket()) {
-            InetAddress ip = InetAddress.getByName(diretoriaIP);
-            int diretoriaPort = 2300; // Porta fixa da diretoria
+            InetAddress ipDiretoria = InetAddress.getByName(diretoriaIP);
+            int portDiretoria = 2300; // Porta fixa da diretoria
+
+            InetAddress ipMulticast = InetAddress.getByName("230.30.30.30");
+            int portMulticast = 3030;
 
             while (true) {
                 String msg = "REGISTER_SERVER;" + tcpPort;
-                DatagramPacket packet = new DatagramPacket(msg.getBytes(), msg.length(), ip, diretoriaPort);
-                socket.send(packet);
-                System.out.println("[Servidor] Enviado heartbeat para diretoria...");
+                byte[] data = msg.getBytes();
 
-                Thread.sleep(10000); // envia a cada 10 segundos
+                DatagramPacket packetDiretoria = new DatagramPacket(data, data.length, ipDiretoria, portDiretoria);
+                socket.send(packetDiretoria);
+
+                DatagramPacket packetMulticast = new DatagramPacket(data, data.length, ipMulticast, portMulticast);
+                socket.send(packetMulticast);
+
+                System.out.println("[Servidor] Enviado heartbeat para (Diretoria + Multicast...)");
+
+                Thread.sleep(5000); // envia a cada 10 segundos
             }
         } catch (Exception e) {
             e.printStackTrace();
