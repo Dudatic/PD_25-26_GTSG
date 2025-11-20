@@ -64,9 +64,9 @@ Persistência (SQLite)		Armazenamento local de dados no servidor
 
 
 Autoria
-José Francisco Spínola Marques Tôco a2023141186
+José Francisco Spínola Marques Tôco - a2023141186
 Duarte Machado Gois - a2022136610
-David Lopes dos Santos 2022135712
+David Lopes dos Santos - a2022135712
 
 
 Projeto académico desenvolvido no âmbito da unidade curricular Programação Distribuída (DEIS/ISEC) — 2025/2026.

@@ -15,11 +15,9 @@ public class TCPClient {
         this.serverPort = serverPort;
     }
 
-
     // ADICIONADO: "throws IOException" para avisar o ClientMain em caso de falha
-    // ADICIONADO: "throws IOException" para avisar o ClientMain em caso de falha
+    // MUDANÇA: Adicionado "throws IOException" e removido o "catch" final
     public void start() throws IOException {
-        // REMOVIDO: O try-catch envolvente. Mantemos apenas o try-with-resources.
         try (Socket socket = new Socket(serverIP, serverPort);
              BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
@@ -27,7 +25,7 @@ public class TCPClient {
 
             System.out.println("[Cliente] Ligado ao servidor " + serverIP + ":" + serverPort);
 
-            // Leitura inicial (se o servidor mandar boas-vindas)
+            // Lê a mensagem de boas vindas
             if (in.ready()) {
                 System.out.println("[Servidor diz] " + in.readLine());
             }
@@ -36,21 +34,16 @@ public class TCPClient {
                 System.out.print("> ");
                 if (!sc.hasNextLine()) break;
                 String msg = sc.nextLine();
-
                 out.println(msg);
 
-                // ADICIONADO: Verificação de erro no envio
-                if (out.checkError()) {
-                    throw new IOException("Erro ao enviar dados (servidor pode ter caído).");
-                }
+                if (out.checkError()) throw new IOException("Erro no envio.");
 
                 String resposta = in.readLine();
-                // ADICIONADO: Se a resposta for null, a ligação caiu
-                if (resposta == null) {
-                    throw new IOException("O servidor encerrou a ligação.");
-                }
+                if (resposta == null) throw new IOException("Conexão fechada.");
+
                 System.out.println("[Servidor] " + resposta);
             }
         }
+        // O catch foi removido propositadamente para o erro subir ao ClientMain!
     }
 }
