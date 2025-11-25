@@ -5,10 +5,12 @@ import java.io.*;
 public class ServerTCP {
     private final int tcpPort;
     private final String diretoriaIP;
+    private final Database db;
 
-    public ServerTCP(int tcpPort, String diretoriaIP) {
+    public ServerTCP(int tcpPort, String diretoriaIP, Database db) {
         this.tcpPort = tcpPort;
         this.diretoriaIP = diretoriaIP;
+        this.db = db;
     }
 
     public void start() {
@@ -18,7 +20,7 @@ public class ServerTCP {
         try (ServerSocket serverSocket = new ServerSocket(tcpPort)) {
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                new Thread(new ClientHandler(clientSocket)).start();
+                new Thread(new ClientHandler(clientSocket, db)).start();
             }
         } catch (IOException e) {
             e.printStackTrace();
