@@ -4,46 +4,68 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
-//Liga-se ao servidor via TCP e gere a interação na consola
-
 public class TCPClient {
     private final String serverIP;
     private final int serverPort;
+    private Socket socket;
+    private boolean running = true;
 
     public TCPClient(String serverIP, int serverPort) {
         this.serverIP = serverIP;
         this.serverPort = serverPort;
     }
 
-    // ADICIONADO: "throws IOException" para avisar o ClientMain em caso de falha
-    // MUDANÇA: Adicionado "throws IOException" e removido o "catch" final
     public void start() throws IOException {
-        try (Socket socket = new Socket(serverIP, serverPort);
-             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-             Scanner sc = new Scanner(System.in)) {
+        socket = new Socket(serverIP, serverPort);
+        System.out.println("[Cliente] Ligado ao servidor " + serverIP + ":" + serverPort);
 
-            System.out.println("[Cliente] Ligado ao servidor " + serverIP + ":" + serverPort);
+        // Thread 1: Escuta o Servidor (Output)
+        // Esta thread corre em paralelo e imprime tudo o que o servidor mandar
+        new Thread(new ServerListener()).start();
 
-            // Lê a mensagem de boas vindas
-            if (in.ready()) {
-                System.out.println("[Servidor diz] " + in.readLine());
-            }
+        // Thread 2 (Main): Lê do Teclado (Input)
+        // Esta thread fica bloqueada à espera que o utilizador escreva
+        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
+        Scanner sc = new Scanner(System.in);
 
-            while (true) {
-                System.out.print("> ");
-                if (!sc.hasNextLine()) break;
+        while (running) {
+            // Verifica se há input no teclado
+            if (sc.hasNextLine()) {
                 String msg = sc.nextLine();
                 out.println(msg);
-
-                if (out.checkError()) throw new IOException("Erro no envio.");
-
-                String resposta = in.readLine();
-                if (resposta == null) throw new IOException("Conexão fechada.");
-
-                System.out.println("[Servidor] " + resposta);
+            } else {
+                break; // Sai se o scanner fechar (ex: Ctrl+D)
             }
         }
-        // O catch foi removido propositadamente para o erro subir ao ClientMain!
+        close();
+    }
+
+    private void close() {
+        running = false;
+        try {
+            if (socket != null && !socket.isClosed()) socket.close();
+        } catch (IOException e) {
+            // Ignorar erro no fecho
+        }
+    }
+
+    // Classe interna para ouvir o servidor sem bloquear a escrita
+    private class ServerListener implements Runnable {
+        @Override
+        public void run() {
+            try {
+                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                String msg;
+                while ((msg = in.readLine()) != null) {
+                    System.out.println("[Servidor]: " + msg);
+                    System.out.print("> "); // Mostra o prompt novamente para ficar bonito
+                }
+            } catch (IOException e) {
+                if (running) {
+                    System.out.println("\n[Cliente] Ligação ao servidor perdida.");
+                    System.exit(0);
+                }
+            }
+        }
     }
 }

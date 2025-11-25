@@ -3,8 +3,8 @@ package server;
 public class ServerMain {
 
     public static void main(String[] args) {
-        if (args.length != 3) { //porto, idDiretoria, caminhoBD
-            System.out.println("Uso: java ServerMain <portoTCP> <ipDiretoria>");
+        if (args.length != 3) {
+            System.out.println("Uso: java ServerMain <portoTCP> <ipDiretoria> <caminhoBD>");
             return;
         }
 
@@ -12,11 +12,8 @@ public class ServerMain {
         String diretoriaIP = args[1];
         String dbPath = args[2];
 
-        Database db = new Database(dbPath);
-        db.connect();
-
-        ServerTCP server = new ServerTCP(tcpPort, diretoriaIP, db);
+        // A inicialização da BD passou para dentro do ServerTCP para centralizar o acesso
+        ServerTCP server = new ServerTCP(tcpPort, diretoriaIP, dbPath);
         server.start();
     }
-
 }
