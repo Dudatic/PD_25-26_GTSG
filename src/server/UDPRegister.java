@@ -11,7 +11,7 @@ public class UDPRegister implements Runnable {
     public UDPRegister(String diretoriaIP, int tcpPort, Database db) {
         this.diretoriaIP = diretoriaIP;
         this.tcpPort = tcpPort;
-        this.syncPort = tcpPort + 1; // Convenção: Porto sync é TCP + 1
+        this.syncPort = tcpPort + 1;
         this.db = db;
     }
 
@@ -20,20 +20,15 @@ public class UDPRegister implements Runnable {
         try (DatagramSocket socket = new DatagramSocket()) {
             InetAddress ipDiretoria = InetAddress.getByName(diretoriaIP);
             int portDiretoria = 2300;
-
             InetAddress ipMulticast = InetAddress.getByName("230.30.30.30");
             int portMulticast = 3030;
 
             while (true) {
                 int versaoDb = db.getVersao();
-
-                // 1. Para a Diretoria (Registo simples)
                 String msgDiretoria = "REGISTER_SERVER;" + tcpPort;
                 byte[] dataDir = msgDiretoria.getBytes();
                 socket.send(new DatagramPacket(dataDir, dataDir.length, ipDiretoria, portDiretoria));
 
-                // 2. Para o Multicast (Sincronização com outros servidores)
-                // Formato: HEARTBEAT;versao_db;porto_clientes;porto_sincronizacao
                 String msgMulticast = "HEARTBEAT;" + versaoDb + ";" + tcpPort + ";" + syncPort;
                 byte[] dataMulti = msgMulticast.getBytes();
                 socket.send(new DatagramPacket(dataMulti, dataMulti.length, ipMulticast, portMulticast));
@@ -41,8 +36,6 @@ public class UDPRegister implements Runnable {
                 // System.out.println("[Servidor] Heartbeat enviado (v" + versaoDb + ")");
                 Thread.sleep(5000);
             }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        } catch (Exception e) { e.printStackTrace(); }
     }
 }
