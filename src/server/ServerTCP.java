@@ -1,45 +1,53 @@
 package server;
-import java.net.*;
-import java.io.*;
 
-public class ServerTCP {
-    private final int tcpPort;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+public class ServerTCP extends Thread {
+    private final int port;
     private final String diretoriaIP;
-    private final Database db;
-    private final String dbPath; // Guardar o caminho para passar às threads
+    private final String dbPath;
+    private Database db;
+    private UDPRegister udpRegister; // Guardar referência
+    private boolean running = true;
 
-    // Construtor atualizado para receber o dbPath
-    public ServerTCP(int tcpPort, String diretoriaIP, String dbPath) {
-        this.tcpPort = tcpPort;
+    public ServerTCP(int port, String diretoriaIP, String dbPath) {
+        this.port = port;
         this.diretoriaIP = diretoriaIP;
         this.dbPath = dbPath;
-
-        this.db = new Database(dbPath);
-        this.db.connect();
     }
 
-    public void start() {
-        System.out.println("[Servidor] A iniciar componentes...");
+    @Override
+    public void run() {
+        // 1. Iniciar Base de Dados
+        db = new Database(dbPath);
+        db.connect();
 
-        // 1. Envia Heartbeats (UDP)
-        new Thread(new UDPRegister(diretoriaIP, tcpPort, db)).start();
+        // 2. Iniciar sistema de registo e multicast
+        // Passamos a DB para ele ler a versão, mas ainda não ligamos a escrita
+        udpRegister = new UDPRegister(diretoriaIP, port, db);
+        new Thread(udpRegister).start();
 
-        // 2. Escuta Multicast (Sincronização - recebe atualizações)
-        new Thread(new MulticastListener(db, tcpPort, dbPath)).start();
+        // 3. IMPORTANTE: Ligar o UDPRegister à BD para permitir notificações de escrita
+        db.setUdpRegister(udpRegister);
 
-        // 3. Servidor de Ficheiros (Permite que outros saquem a BD daqui)
-        // Porto de sync = tcpPort + 1
-        new Thread(new FileSyncServer(tcpPort + 1, dbPath)).start();
+        // 4. Iniciar Listener Multicast (para receber updates de outros)
+        new Thread(new MulticastListener(db, port, dbPath)).start();
 
-        // 4. Aceita Clientes (TCP) - Bloqueante
-        System.out.println("[Servidor] À escuta de clientes no porto TCP " + tcpPort);
-        try (ServerSocket serverSocket = new ServerSocket(tcpPort)) {
-            while (true) {
+        // 5. Iniciar Servidor de Ficheiros (para fornecer cópia da DB)
+        new Thread(new FileSyncServer(port + 1, dbPath)).start();
+
+        System.out.println("[ServidorTCP] À escuta no porto " + port);
+
+        try (ServerSocket serverSocket = new ServerSocket(port)) {
+            while (running) {
                 Socket clientSocket = serverSocket.accept();
+                // Cria uma nova thread para cada cliente
                 new Thread(new ClientHandler(clientSocket, db)).start();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("[ServidorTCP] Erro: " + e.getMessage());
         }
     }
 }

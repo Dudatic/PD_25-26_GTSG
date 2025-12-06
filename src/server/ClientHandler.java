@@ -3,7 +3,6 @@ package server;
 import java.io.*;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
 public class ClientHandler implements Runnable {
@@ -25,11 +24,11 @@ public class ClientHandler implements Runnable {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
              PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
 
-            out.println("BEM-VINDO;Sistema de Perguntas (V2). Comandos: LOGIN, REGISTER, CREATE");
+            out.println("BEM-VINDO;Sistema de Perguntas (V2). Comandos: LOGIN, REGISTER, CREATE, LIST, ANSWER, CSV");
 
             String line;
             while ((line = in.readLine()) != null) {
-                System.out.println("[Servidor] Recebido de " + currentUserName + ": " + line);
+                System.out.println("[Servidor] Recebido de " + (currentUserName.isEmpty() ? "Anonimo" : currentUserName) + ": " + line);
                 String[] parts = line.split(";");
                 String comando = parts[0].toUpperCase();
 
@@ -108,12 +107,83 @@ public class ClientHandler implements Runnable {
                         }
                         break;
 
+                    case "LIST":
+                        if (currentUserId == -1) {
+                            out.println("ERRO;Precisa de fazer login primeiro.");
+                            break;
+                        }
+
+                        List<String> perguntas;
+                        // Verifica o tipo de utilizador e chama o método correto da DB
+                        if (currentUserType.equals("DOCENTE")) {
+                            perguntas = db.getPerguntasDocente(currentUserId);
+                        } else {
+                            perguntas = db.getPerguntasEstudante(currentUserId);
+                        }
+
+                        if (perguntas.isEmpty()) {
+                            out.println("INFO;Nenhuma pergunta encontrada (ou nenhuma ativa).");
+                        } else {
+                            out.println("LISTA_INICIO;--- Perguntas Disponiveis ---");
+                            for (String p : perguntas) {
+                                out.println(p);
+                            }
+                            out.println("LISTA_FIM");
+                        }
+                        break;
+
+                    case "ANSWER":
+                        // Sintaxe: ANSWER;id_pergunta;opcao
+                        if (!currentUserType.equals("ESTUDANTE")) {
+                            out.println("ERRO;Apenas estudantes podem responder.");
+                            break;
+                        }
+                        if (parts.length < 3) {
+                            out.println("ERRO;Sintaxe: ANSWER;id_pergunta;opcao");
+                            break;
+                        }
+                        try {
+                            int pId = Integer.parseInt(parts[1]);
+                            String opcao = parts[2].toUpperCase();
+
+                            String resultado = db.submitAnswer(currentUserId, pId, opcao);
+                            out.println(resultado);
+
+                        } catch (NumberFormatException e) {
+                            out.println("ERRO;ID da pergunta invalido.");
+                        }
+                        break;
+
+                    case "CSV":
+                        // Sintaxe: CSV;id_pergunta
+                        if (!currentUserType.equals("DOCENTE")) {
+                            out.println("ERRO;Apenas docentes podem exportar dados.");
+                            break;
+                        }
+                        if (parts.length < 2) {
+                            out.println("ERRO;Sintaxe: CSV;id_pergunta");
+                            break;
+                        }
+                        try {
+                            int pId = Integer.parseInt(parts[1]);
+                            String respostaCsv = db.getRelatorioCSV(pId, currentUserId);
+
+                            // Se o CSV for grande, o cliente terá de ler várias linhas.
+                            // Aqui enviamos tudo numa string (com \n)
+                            out.println(respostaCsv);
+
+                        } catch (NumberFormatException e) {
+                            out.println("ERRO;ID invalido.");
+                        }
+                        break;
+
                     default:
-                        out.println("ERRO;Comando desconhecido.");
+                        out.println("ERRO;Comando desconhecido (" + comando + ")");
+                        break;
                 }
             }
         } catch (IOException e) {
-            System.out.println("[Servidor] Cliente " + currentUserName + " desconectado.");
+            System.out.println("[Servidor] Cliente " + (currentUserName.isEmpty() ? "Anonimo" : currentUserName) + " desconectado.");
         }
     }
 }
