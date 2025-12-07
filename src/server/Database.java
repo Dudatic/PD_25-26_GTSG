@@ -203,6 +203,8 @@ public class Database {
         return finalSql;
     }
 
+
+
     public String authenticateUser(String email, String password) {
         String sqlDoc = "SELECT id, nome FROM docente WHERE email = ? AND password = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sqlDoc)) {
@@ -221,6 +223,113 @@ public class Database {
         } catch (SQLException e) { e.printStackTrace(); }
 
         return null;
+    }
+
+    public synchronized boolean updatePergunta(int docenteId, String codigo, String novoEn, String novaCerta, String novaIni, String novaFim, List<String> novasOpcoes) {
+        if (hasRespostas(codigo)) return false;
+
+        int perguntaId = -1;
+        String checkSql = "SELECT id FROM pergunta WHERE codigo = ? AND docente_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(checkSql)) {
+            pstmt.setString(1, codigo);
+            pstmt.setInt(2, docenteId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) perguntaId = rs.getInt("id");
+            else return false;
+        } catch (SQLException e) { return false; }
+
+        try {
+            connection.setAutoCommit(false);
+
+            // Update Pergunta
+            String updateP = "UPDATE pergunta SET enunciado=?, opcao_certa=?, data_inicio=?, data_fim=? WHERE id=?";
+            try (PreparedStatement pstmt = connection.prepareStatement(updateP)) {
+                pstmt.setString(1, novoEn); pstmt.setString(2, novaCerta);
+                pstmt.setString(3, novaIni); pstmt.setString(4, novaFim);
+                pstmt.setInt(5, perguntaId);
+                pstmt.executeUpdate();
+            }
+
+            // Replace Opções
+            try (Statement st = connection.createStatement()) { st.execute("DELETE FROM opcao WHERE pergunta_id=" + perguntaId); }
+
+            String insertO = "INSERT INTO opcao(pergunta_id, codigo, texto) VALUES(?,?,?)";
+            char codigoOpcao = 'A';
+            try (PreparedStatement pstmt = connection.prepareStatement(insertO)) {
+                for (String texto : novasOpcoes) {
+                    pstmt.setInt(1, perguntaId);
+                    pstmt.setString(2, String.valueOf(codigoOpcao));
+                    pstmt.setString(3, texto);
+                    pstmt.addBatch();
+                    codigoOpcao++;
+                }
+                pstmt.executeBatch();
+            }
+
+            connection.commit();
+            incrementarVersaoDB();
+
+            if (udpRegister != null) {
+                // 1. Enviar o Update da Pergunta
+                String sqlUpdateP = "UPDATE pergunta SET enunciado='" + novoEn + "', opcao_certa='" + novaCerta +
+                        "', data_inicio='" + novaIni + "', data_fim='" + novaFim + "' WHERE codigo='" + codigo + "'";
+                // Nota: Idealmente usaria ID, mas codigo é mais seguro entre servidores desincronizados
+                udpRegister.sendSyncUpdate(getVersao(), sqlUpdateP);
+
+                // 2. Enviar o Delete das Opções
+                // Precisamos saber o ID para apagar opções. Vamos usar subquery para ser robusto.
+                String subQueryId = "(SELECT id FROM pergunta WHERE codigo='" + codigo + "')";
+                String sqlDeleteOp = "DELETE FROM opcao WHERE pergunta_id=" + subQueryId;
+                udpRegister.sendSyncUpdate(getVersao(), sqlDeleteOp);
+
+                // 3. Enviar os Inserts das novas Opções
+                char c = 'A';
+                for (String texto : novasOpcoes) {
+                    String sqlInsertOp = "INSERT INTO opcao(pergunta_id, codigo, texto) VALUES(" + subQueryId + ", '" + c + "', '" + texto + "')";
+                    udpRegister.sendSyncUpdate(getVersao(), sqlInsertOp);
+                    c++;
+                }
+            }
+
+            return true;
+        } catch (SQLException e) {
+            try { connection.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
+            return false;
+        } finally {
+            try { connection.setAutoCommit(true); } catch (SQLException e) { e.printStackTrace(); }
+        }
+    }
+
+
+
+    public synchronized boolean deletePergunta(int docenteId, String codigo) {
+        if (hasRespostas(codigo)) return false;
+
+        String sql = "DELETE FROM pergunta WHERE codigo = ? AND docente_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, codigo);
+            pstmt.setInt(2, docenteId);
+            int rows = pstmt.executeUpdate();
+            if (rows > 0) {
+                incrementarVersaoDB();
+                if (udpRegister != null) {
+                    String sqlSync = "DELETE FROM pergunta WHERE codigo = '" + codigo + "' AND docente_id = " + docenteId;
+                    udpRegister.sendSyncUpdate(getVersao(), sqlSync);
+                }
+                return true;
+            }
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
+    }
+
+
+    private boolean hasRespostas(String codigo) {
+        try (PreparedStatement ps = connection.prepareStatement("SELECT COUNT(*) FROM resposta r JOIN pergunta p ON r.pergunta_id=p.id WHERE p.codigo=?")) {
+            ps.setString(1, codigo);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) return rs.getInt(1) > 0;
+        } catch (SQLException e) { e.printStackTrace(); }
+        return false;
     }
 
     // 1. Listar Perguntas do Docente (Vê tudo o que criou)
@@ -391,7 +500,7 @@ public class Database {
 
         } catch (Exception e) { e.printStackTrace(); return "ERRO;Falha ao gerar CSV."; }
 
-        return "SUCESSO_CSV;" + csv.toString();
+        return "SUCESSO_CSV;" + csv.toString().replace("\n", "@@NWL@@");
     }
 
     private void incrementarVersaoDB() {

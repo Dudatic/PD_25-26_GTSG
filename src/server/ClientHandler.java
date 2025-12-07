@@ -132,6 +132,7 @@ public class ClientHandler implements Runnable {
                         }
                         break;
 
+
                     case "ANSWER":
                         // Sintaxe: ANSWER;id_pergunta;opcao
                         if (!currentUserType.equals("ESTUDANTE")) {
@@ -175,6 +176,24 @@ public class ClientHandler implements Runnable {
                         } catch (NumberFormatException e) {
                             out.println("ERRO;ID invalido.");
                         }
+                        break;
+
+                    case "EDIT_QUESTION":
+                        if (!currentUserType.equals("DOCENTE")) { out.println("ERRO;Apenas docentes."); break; }
+                        if (parts.length < 8) { out.println("ERRO;Dados insuficientes."); break; }
+                        List<String> nOpcoes = new ArrayList<>();
+                        for (int i = 6; i < parts.length; i++) nOpcoes.add(parts[i]);
+
+                        if (db.updatePergunta(currentUserId, parts[1], parts[2], parts[3], parts[4], parts[5], nOpcoes))
+                            out.println("SUCESSO;Pergunta atualizada.");
+                        else out.println("ERRO;Falha (Tem respostas? Nao e o autor?).");
+                        break;
+
+                    case "DELETE":
+                        if (!currentUserType.equals("DOCENTE")) { out.println("ERRO;Apenas docentes."); break; }
+                        if (parts.length < 2) { out.println("ERRO;Indique o codigo."); break; }
+                        if (db.deletePergunta(currentUserId, parts[1])) out.println("SUCESSO;Pergunta apagada.");
+                        else out.println("ERRO;Falha (Tem respostas? Nao e o autor?).");
                         break;
 
                     default:

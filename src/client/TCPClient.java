@@ -57,8 +57,24 @@ public class TCPClient {
                 BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                 String msg;
                 while ((msg = in.readLine()) != null) {
-                    System.out.println("[Servidor]: " + msg);
-                    System.out.print("> "); // Mostra o prompt novamente para ficar bonito
+                    // --- ALTERAÇÃO AQUI ---
+                    if (msg.startsWith("SUCESSO_CSV;")) {
+                        System.out.println("[Cliente] A receber ficheiro CSV...");
+
+                        // 1. Tira o prefixo e repõe as quebras de linha reais
+                        String conteudo = msg.substring(12).replace("@@NWL@@", "\n");
+
+                        try (FileWriter fw = new FileWriter("relatorio_pergunta.csv")) {
+                            fw.write(conteudo);
+                            System.out.println("[Cliente] Ficheiro 'relatorio_pergunta.csv' gravado com sucesso!");
+                        } catch (IOException e) {
+                            System.out.println("[Cliente] Erro ao gravar ficheiro: " + e.getMessage());
+                        }
+                    } else {
+                        // Mensagem normal
+                        System.out.println("[Servidor]: " + msg);
+                        System.out.print("> ");
+                    }
                 }
             } catch (IOException e) {
                 if (running) {
@@ -68,4 +84,23 @@ public class TCPClient {
             }
         }
     }
+
+    //    private class ServerListener implements Runnable {
+//        @Override
+//        public void run() {
+//            try {
+//                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+//                String msg;
+//                while ((msg = in.readLine()) != null) {
+//                    System.out.println("[Servidor]: " + msg);
+//                    System.out.print("> "); // Mostra o prompt novamente para ficar bonito
+//                }
+//            } catch (IOException e) {
+//                if (running) {
+//                    System.out.println("\n[Cliente] Ligação ao servidor perdida.");
+//                    System.exit(0);
+//                }
+//            }
+//        }
+//    }
 }

@@ -50,4 +50,5 @@ public class ServerTCP extends Thread {
             System.out.println("[ServidorTCP] Erro: " + e.getMessage());
         }
     }
+
 }
