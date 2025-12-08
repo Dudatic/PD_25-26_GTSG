@@ -28,7 +28,7 @@ public class ClientHandler implements Runnable {
              PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
 
             server.addClient(out);
-            out.println("BEM-VINDO;Sistema de Perguntas (V2). Comandos: REGISTER, LOGIN, EDIT_PROFILE, CREATE, EDIT_QUESTION, LIST, CSV, DELETE, GET_QUESTION, ANSWER, MY_GRADES");
+            out.println("BEM-VINDO;Sistema de Perguntas (V2). Comandos: REGISTER, LOGIN, LOGOUT, EDIT_PROFILE, CREATE, EDIT_QUESTION, LIST, CSV, DELETE, GET_QUESTION, ANSWER, MY_GRADES");
 
             String line;
             while ((line = in.readLine()) != null) {
@@ -69,6 +69,18 @@ public class ClientHandler implements Runnable {
                             this.currentUserName = userParts[2];
                             out.println("SUCESSO;Bem-vindo " + currentUserName);
                         } else { out.println("ERRO;Credenciais invalidas."); }
+                        break;
+
+                    case "LOGOUT":
+                        if (currentUserId == -1) {
+                            out.println("ERRO;Nao existe sessao ativa.");
+                        } else {
+                            // Limpa os dados da sessão atual
+                            this.currentUserId = -1;
+                            this.currentUserType = "";
+                            this.currentUserName = "";
+                            out.println("SUCESSO;Sessao terminada. Ate logo!");
+                        }
                         break;
 
                     case "EDIT_PROFILE":

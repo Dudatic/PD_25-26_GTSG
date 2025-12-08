@@ -1,4 +1,5 @@
 package server;
+
 import java.net.*;
 import java.io.*;
 import java.util.ArrayList;
@@ -16,7 +17,8 @@ public class ServerTCP {
         this.tcpPort = tcpPort;
         this.diretoriaIP = diretoriaIP;
         this.dbPath = dbPath;
-        this.db = new Database(dbPath);
+        // Passamos 'this' para que a Database possa chamar sendMulticast e pegar o porto
+        this.db = new Database(dbPath, this);
         this.db.connect();
     }
 
@@ -50,5 +52,21 @@ public class ServerTCP {
         for (PrintWriter client : activeClients) {
             client.println("NOTIFICACAO;" + mensagem);
         }
+    }
+
+    // Novo método para enviar SQL/Heartbeats para o cluster
+    public void sendMulticast(String message) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            InetAddress group = InetAddress.getByName("230.30.30.30");
+            byte[] buffer = message.getBytes();
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, 3030);
+            socket.send(packet);
+        } catch (IOException e) {
+            System.out.println("[ServerTCP] Erro multicast: " + e.getMessage());
+        }
+    }
+
+    public int getTcpPort() {
+        return tcpPort;
     }
 }

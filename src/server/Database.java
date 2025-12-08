@@ -10,10 +10,18 @@ import java.time.format.DateTimeParseException;
 
 public class Database {
     private final String dbPath;
+    private final ServerTCP server; // Referência para enviar multicast
     private Connection connection;
 
+    public Database(String dbPath, ServerTCP server) {
+        this.dbPath = dbPath;
+        this.server = server;
+    }
+
+    // Construtor auxiliar
     public Database(String dbPath) {
         this.dbPath = dbPath;
+        this.server = null;
     }
 
     public void connect() {
@@ -63,22 +71,42 @@ public class Database {
 
     public synchronized boolean registerDocente(String nome, String email, String password) {
         String sql = "INSERT INTO docente(nome, email, password) VALUES(?,?,?)";
-        return executeUpdateOrInsert(sql, nome, email, password);
+        if (executeUpdateOrInsert(sql, nome, email, password)) {
+            String sqlReplica = String.format("INSERT INTO docente(nome, email, password) VALUES('%s', '%s', '%s')", nome, email, password);
+            propagateSQL(sqlReplica);
+            return true;
+        }
+        return false;
     }
 
     public synchronized boolean registerEstudante(int numero, String nome, String email, String password) {
         String sql = "INSERT INTO estudante(numero, nome, email, password) VALUES(?,?,?,?)";
-        return executeUpdateOrInsert(sql, numero, nome, email, password);
+        if (executeUpdateOrInsert(sql, numero, nome, email, password)) {
+            String sqlReplica = String.format("INSERT INTO estudante(numero, nome, email, password) VALUES(%d, '%s', '%s', '%s')", numero, nome, email, password);
+            propagateSQL(sqlReplica);
+            return true;
+        }
+        return false;
     }
 
     public synchronized boolean updateDocente(int id, String nome, String email, String password) {
         String sql = "UPDATE docente SET nome = ?, email = ?, password = ? WHERE id = ?";
-        return executeUpdateOrInsert(sql, nome, email, password, id);
+        if (executeUpdateOrInsert(sql, nome, email, password, id)) {
+            String sqlReplica = String.format("UPDATE docente SET nome='%s', email='%s', password='%s' WHERE id=%d", nome, email, password, id);
+            propagateSQL(sqlReplica);
+            return true;
+        }
+        return false;
     }
 
     public synchronized boolean updateEstudante(int id, String nome, String email, String password) {
         String sql = "UPDATE estudante SET nome = ?, email = ?, password = ? WHERE id = ?";
-        return executeUpdateOrInsert(sql, nome, email, password, id);
+        if (executeUpdateOrInsert(sql, nome, email, password, id)) {
+            String sqlReplica = String.format("UPDATE estudante SET nome='%s', email='%s', password='%s' WHERE id=%d", nome, email, password, id);
+            propagateSQL(sqlReplica);
+            return true;
+        }
+        return false;
     }
 
     public String authenticateUser(String email, String password) {
@@ -138,6 +166,20 @@ public class Database {
             }
             connection.commit();
             incrementarVersaoDB();
+
+            // --- REPLICAÇÃO ---
+            String sqlRepPergunta = String.format("INSERT INTO pergunta(docente_id, enunciado, opcao_certa, data_inicio, data_fim, codigo) VALUES(%d, '%s', '%s', '%s', '%s', '%s')",
+                    docenteId, enunciado, opcaoCerta, dataInicio, dataFim, codigoPergunta);
+            propagateSQL(sqlRepPergunta);
+
+            char codOp = 'A';
+            for (String txt : opcoes) {
+                String sqlRepOp = String.format("INSERT INTO opcao(pergunta_id, codigo, texto) VALUES((SELECT id FROM pergunta WHERE codigo='%s'), '%s', '%s')",
+                        codigoPergunta, String.valueOf(codOp++), txt);
+                propagateSQL(sqlRepOp);
+            }
+            // ------------------
+
             return codigoPergunta;
         } catch (SQLException e) {
             try { connection.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
@@ -163,7 +205,6 @@ public class Database {
         try {
             connection.setAutoCommit(false);
 
-            // Update Pergunta
             String updateP = "UPDATE pergunta SET enunciado=?, opcao_certa=?, data_inicio=?, data_fim=? WHERE id=?";
             try (PreparedStatement pstmt = connection.prepareStatement(updateP)) {
                 pstmt.setString(1, novoEn); pstmt.setString(2, novaCerta);
@@ -172,7 +213,6 @@ public class Database {
                 pstmt.executeUpdate();
             }
 
-            // Replace Opções
             try (Statement st = connection.createStatement()) { st.execute("DELETE FROM opcao WHERE pergunta_id=" + perguntaId); }
 
             String insertO = "INSERT INTO opcao(pergunta_id, codigo, texto) VALUES(?,?,?)";
@@ -190,6 +230,21 @@ public class Database {
 
             connection.commit();
             incrementarVersaoDB();
+
+            // --- REPLICAÇÃO ---
+            String sqlRepUpd = String.format("UPDATE pergunta SET enunciado='%s', opcao_certa='%s', data_inicio='%s', data_fim='%s' WHERE codigo='%s'",
+                    novoEn, novaCerta, novaIni, novaFim, codigo);
+            propagateSQL(sqlRepUpd);
+
+            propagateSQL("DELETE FROM opcao WHERE pergunta_id=(SELECT id FROM pergunta WHERE codigo='" + codigo + "')");
+            char cOp = 'A';
+            for (String txt : novasOpcoes) {
+                String sqlRepOp = String.format("INSERT INTO opcao(pergunta_id, codigo, texto) VALUES((SELECT id FROM pergunta WHERE codigo='%s'), '%s', '%s')",
+                        codigo, String.valueOf(cOp++), txt);
+                propagateSQL(sqlRepOp);
+            }
+            // ------------------
+
             return true;
         } catch (SQLException e) {
             try { connection.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
@@ -209,6 +264,7 @@ public class Database {
             int rows = pstmt.executeUpdate();
             if (rows > 0) {
                 incrementarVersaoDB();
+                propagateSQL(String.format("DELETE FROM pergunta WHERE codigo='%s'", codigo));
                 return true;
             }
         } catch (SQLException e) { e.printStackTrace(); }
@@ -235,7 +291,6 @@ public class Database {
     }
 
     public String getRespostasCSV(int docenteId, String codigoPergunta) {
-        // Verificar propriedade
         String checkSql = "SELECT id FROM pergunta WHERE codigo = ? AND docente_id = ?";
         int pId = -1;
         try (PreparedStatement ps = connection.prepareStatement(checkSql)) {
@@ -258,8 +313,6 @@ public class Database {
         } catch (SQLException e) { return null; }
         return csv.toString();
     }
-
-    // --- PERGUNTAS (ESTUDANTE) ---
 
     public String getHistoricoEstudante(int estudanteId) {
         StringBuilder sb = new StringBuilder();
@@ -332,7 +385,7 @@ public class Database {
 
         try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM resposta WHERE pergunta_id=? AND estudante_id=?")) {
             ps.setInt(1, pId); ps.setInt(2, estudanteId);
-            if (ps.executeQuery().next()) return false; // Já respondeu
+            if (ps.executeQuery().next()) return false;
         } catch (SQLException e) { return false; }
 
         String sql = "INSERT INTO resposta(pergunta_id, estudante_id, resposta_dada, data_submissao) VALUES(?,?,?, datetime('now'))";
@@ -340,11 +393,23 @@ public class Database {
             ps.setInt(1, pId); ps.setInt(2, estudanteId); ps.setString(3, resposta);
             ps.executeUpdate();
             incrementarVersaoDB();
+
+            String sqlRep = String.format("INSERT INTO resposta(pergunta_id, estudante_id, resposta_dada, data_submissao) VALUES((SELECT id FROM pergunta WHERE codigo='%s'), %d, '%s', datetime('now'))",
+                    codigo, estudanteId, resposta);
+            propagateSQL(sqlRep);
+
             return true;
         } catch (SQLException e) { return false; }
     }
 
-    // --- SINCRONIZAÇÃO ---
+    // --- SINCRONIZAÇÃO E UTILITÁRIOS ---
+
+    private void propagateSQL(String sql) {
+        if (server != null) {
+            // FIX: Envia agora o porto TCP para que o listener saiba ignorar a própria mensagem
+            server.sendMulticast("UPDATE_DB;" + server.getTcpPort() + ";" + sql);
+        }
+    }
 
     private boolean executeUpdateOrInsert(String sql, Object... params) {
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -370,11 +435,12 @@ public class Database {
         return 0;
     }
 
-    public void executeSyncUpdate(String sql) {
+    public synchronized void executeSyncUpdate(String sql) {
         try (Statement s = connection.createStatement()) {
             s.execute(sql);
-            System.out.println("[BD] Sync update applied.");
-        } catch (SQLException e) { System.out.println("[BD] Sync error: " + e.getMessage()); }
+            incrementarVersaoDB();
+            System.out.println("[BD] Sync aplicado: " + sql);
+        } catch (SQLException e) { System.out.println("[BD] Sync error: " + e.getMessage() + " SQL: " + sql); }
     }
 
     private boolean hasRespostas(String codigo) {
@@ -390,7 +456,7 @@ public class Database {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
-                System.out.println("[BD] Conexão fechada para atualização.");
+                System.out.println("[BD] Conexão fechada.");
             }
         } catch (SQLException e) {
             System.out.println("[BD] Erro ao fechar conexão: " + e.getMessage());
@@ -400,5 +466,4 @@ public class Database {
     public String getDbPath() {
         return dbPath;
     }
-
 }
